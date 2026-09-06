@@ -1,42 +1,50 @@
-import os
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import requests
 from datetime import datetime
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# ====================== YOUR CREDENTIALS ======================
+TELEGRAM_TOKEN = "8476521995:AAErD42IIM3Y8MhtplQDq_Lt1Xdh9LrMHBk"
+TELEGRAM_CHAT_ID = "5106218895"
+# =============================================================
 
 
 def send_telegram(msg: str):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Missing Telegram credentials")
-        return
-
+    print("Sending message to Telegram...")
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     try:
-        requests.post(url, json={
+        response = requests.post(url, json={
             "chat_id": TELEGRAM_CHAT_ID,
             "text": msg,
             "parse_mode": "HTML"
-        }, timeout=10)
-        print("Signal sent to Telegram")
+        }, timeout=15)
+
+        print(f"Status code: {response.status_code}")
+        print(f"Response: {response.text}")
+
+        if response.status_code == 200:
+            print("✅ Message sent successfully!")
+        else:
+            print("❌ Failed to send message")
     except Exception as e:
-        print("Telegram error:", e)
+        print(f"❌ Error: {e}")
 
 
 def get_data():
+    print("Downloading SPX data...")
     df = yf.download("^GSPC", period="5d", interval="15m", progress=False, auto_adjust=True)
-    
+
     if df.empty:
+        print("No data received")
         return None
 
-    # Fix MultiIndex columns (common with newer yfinance)
+    # Fix MultiIndex columns
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
     df = df.dropna()
+    print(f"Data rows: {len(df)}")
     return df
 
 
@@ -54,15 +62,10 @@ def detect_regime(df):
 
     last = df.iloc[-1]
 
-    # Safe extraction of scalar values
-    close = float(last["Close"]) if not isinstance(last["Close"], pd.Series) else float(last["Close"].iloc[0])
-    sma20 = float(last["sma20"]) if not isinstance(last["sma20"], pd.Series) else float(last["sma20"].iloc[0])
-    sma50 = float(last["sma50"]) if not isinstance(last["sma50"], pd.Series) else float(last["sma50"].iloc[0])
-    
-    atr_val = last["atr"]
-    atr = float(atr_val) if not isinstance(atr_val, pd.Series) else float(atr_val.iloc[0])
-    if pd.isna(atr):
-        atr = 20.0
+    close = float(last["Close"])
+    sma20 = float(last["sma20"]) if not pd.isna(last["sma20"]) else close
+    sma50 = float(last["sma50"]) if not pd.isna(last["sma50"]) else close
+    atr = float(last["atr"]) if not pd.isna(last["atr"]) else 20.0
 
     recent_high = float(df["High"].tail(20).max())
     recent_low = float(df["Low"].tail(20).min())
@@ -124,16 +127,21 @@ def generate_signal(regime, price, atr):
 
 
 def main():
-    print("Running daily SPX signal via GitHub Actions...")
+    print("=== Starting Daily SPX Signal ===")
+
+    # First send a test message
+    send_telegram("🔔 <b>Bot Test</b>\nGitHub Action is working!")
 
     df = get_data()
     if df is None or df.empty:
-        send_telegram("⚠️ Daily SPX Signal failed – no market data")
+        send_telegram("⚠️ Failed to get market data")
         return
 
     df = calculate_indicators(df)
     regime, atr = detect_regime(df)
     price = float(df["Close"].iloc[-1])
+
+    print(f"Regime: {regime} | Price: {price}")
 
     signal = generate_signal(regime, price, atr)
     print(signal)
