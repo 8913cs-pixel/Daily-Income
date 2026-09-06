@@ -4,21 +4,14 @@ import pandas as pd
 import numpy as np
 import requests
 from datetime import datetime
-import pytz
-from dotenv import load_dotenv
 
-load_dotenv()
-
-# ====================== CONFIG ======================
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-# ====================================================
 
 
 def send_telegram(msg: str):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram credentials missing")
-        print(msg)
+        print("Missing Telegram credentials")
         return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -28,13 +21,13 @@ def send_telegram(msg: str):
             "text": msg,
             "parse_mode": "HTML"
         }, timeout=10)
-        print("Telegram sent successfully")
+        print("Signal sent to Telegram")
     except Exception as e:
         print("Telegram error:", e)
 
 
-def get_data(symbol="^GSPC", period="5d", interval="15m"):
-    df = yf.download(symbol, period=period, interval=interval, progress=False)
+def get_data():
+    df = yf.download("^GSPC", period="5d", interval="15m", progress=False)
     if df.empty:
         return None
     return df.dropna()
@@ -77,22 +70,22 @@ def generate_signal(regime, price, atr):
         strike = price + round(atr * 0.4)
         return (
             f"📈 <b>Daily SPX Signal – TRENDING BULL</b>\n"
-            f"Date: {datetime.now().strftime('%Y-%m-%d')}\n"
-            f"Current: <b>{price}</b>\n\n"
-            f"<b>Idea: Call (or Call Debit Spread)</b>\n"
-            f"Look at ~{strike} Call (0DTE or weekly)\n"
-            f"Expected move support: ±{expected_move} pts"
+            f"Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC\n"
+            f"Price: <b>{price}</b>\n\n"
+            f"<b>Idea: Call</b>\n"
+            f"Look ~{strike} Call (0DTE / weekly)\n"
+            f"Expected move: ±{expected_move} pts"
         )
 
     elif regime == "TRENDING_BEAR":
         strike = price - round(atr * 0.4)
         return (
             f"📉 <b>Daily SPX Signal – TRENDING BEAR</b>\n"
-            f"Date: {datetime.now().strftime('%Y-%m-%d')}\n"
-            f"Current: <b>{price}</b>\n\n"
-            f"<b>Idea: Put (or Put Debit Spread)</b>\n"
-            f"Look at ~{strike} Put (0DTE or weekly)\n"
-            f"Expected move support: ±{expected_move} pts"
+            f"Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC\n"
+            f"Price: <b>{price}</b>\n\n"
+            f"<b>Idea: Put</b>\n"
+            f"Look ~{strike} Put (0DTE / weekly)\n"
+            f"Expected move: ±{expected_move} pts"
         )
 
     else:
@@ -104,20 +97,19 @@ def generate_signal(regime, price, atr):
 
         return (
             f"↔️ <b>Daily SPX Signal – RANGING</b>\n"
-            f"Date: {datetime.now().strftime('%Y-%m-%d')}\n"
-            f"Current: <b>{price}</b>\n"
-            f"Expected range ≈ ±{expected_move} pts\n\n"
-            f"<b>Primary Idea: Iron Condor</b>\n"
-            f"Sell {short_put} Put / Buy {long_put} Put\n"
-            f"Sell {short_call} Call / Buy {long_call} Call\n"
-            f"Target: collect credit\n\n"
-            f"<b>Alternative: Butterfly</b>\n"
-            f"Center ~{center} | Wings ±25"
+            f"Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC\n"
+            f"Price: <b>{price}</b>\n"
+            f"Expected range: ±{expected_move} pts\n\n"
+            f"<b>Iron Condor Idea:</b>\n"
+            f"Sell {short_put}P / Buy {long_put}P\n"
+            f"Sell {short_call}C / Buy {long_call}C\n\n"
+            f"<b>Butterfly Idea:</b>\n"
+            f"Center {center} | Wings ±25"
         )
 
 
 def main():
-    print(f"[{datetime.now()}] Running daily SPX signal...")
+    print("Running daily SPX signal via GitHub Actions...")
 
     df = get_data()
     if df is None or df.empty:
@@ -131,7 +123,6 @@ def main():
     signal = generate_signal(regime, price, atr)
     print(signal)
     send_telegram(signal)
-    print("Daily signal sent. Exiting.")
 
 
 if __name__ == "__main__":
