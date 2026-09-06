@@ -27,10 +27,17 @@ def send_telegram(msg: str):
 
 
 def get_data():
-    df = yf.download("^GSPC", period="5d", interval="15m", progress=False)
+    df = yf.download("^GSPC", period="5d", interval="15m", progress=False, auto_adjust=True)
+    
     if df.empty:
         return None
-    return df.dropna()
+
+    # Fix MultiIndex columns (common with newer yfinance)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    df = df.dropna()
+    return df
 
 
 def calculate_indicators(df):
@@ -43,15 +50,23 @@ def calculate_indicators(df):
 
 def detect_regime(df):
     if len(df) < 50:
-        return "UNKNOWN", 20
+        return "UNKNOWN", 20.0
 
     last = df.iloc[-1]
-    close = float(last["Close"])
-    sma20 = float(last["sma20"])
-    sma50 = float(last["sma50"])
-    atr = float(last["atr"]) if not pd.isna(last["atr"]) else 20
 
-    recent_range = (df["High"].tail(20).max() - df["Low"].tail(20).min()) / close
+    # Safe extraction of scalar values
+    close = float(last["Close"]) if not isinstance(last["Close"], pd.Series) else float(last["Close"].iloc[0])
+    sma20 = float(last["sma20"]) if not isinstance(last["sma20"], pd.Series) else float(last["sma20"].iloc[0])
+    sma50 = float(last["sma50"]) if not isinstance(last["sma50"], pd.Series) else float(last["sma50"].iloc[0])
+    
+    atr_val = last["atr"]
+    atr = float(atr_val) if not isinstance(atr_val, pd.Series) else float(atr_val.iloc[0])
+    if pd.isna(atr):
+        atr = 20.0
+
+    recent_high = float(df["High"].tail(20).max())
+    recent_low = float(df["Low"].tail(20).min())
+    recent_range = (recent_high - recent_low) / close
 
     if close > sma20 > sma50 and recent_range > 0.012:
         return "TRENDING_BULL", atr
