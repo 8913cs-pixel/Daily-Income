@@ -21,12 +21,10 @@ def send_telegram(msg: str):
         }, timeout=15)
 
         print(f"Status code: {response.status_code}")
-        print(f"Response: {response.text}")
-
         if response.status_code == 200:
             print("✅ Message sent successfully!")
         else:
-            print("❌ Failed to send message")
+            print("❌ Failed:", response.text)
     except Exception as e:
         print(f"❌ Error: {e}")
 
@@ -36,10 +34,8 @@ def get_data():
     df = yf.download("^GSPC", period="5d", interval="15m", progress=False, auto_adjust=True)
 
     if df.empty:
-        print("No data received")
         return None
 
-    # Fix MultiIndex columns
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
@@ -61,7 +57,6 @@ def detect_regime(df):
         return "UNKNOWN", 20.0
 
     last = df.iloc[-1]
-
     close = float(last["Close"])
     sma20 = float(last["sma20"]) if not pd.isna(last["sma20"]) else close
     sma50 = float(last["sma50"]) if not pd.isna(last["sma50"]) else close
@@ -84,13 +79,26 @@ def generate_signal(regime, price, atr):
     atr = max(float(atr), 15)
     expected_move = round(atr * 1.8)
 
+    # Common strikes
+    short_put = round((price - expected_move) / 5) * 5
+    long_put = short_put - 25
+    short_call = round((price + expected_move) / 5) * 5
+    long_call = short_call + 25
+    center = round(price / 5) * 5
+
+    # Inverse strikes (closer wings for reverse structures)
+    inv_long_put = round((price - expected_move * 0.6) / 5) * 5
+    inv_short_put = inv_long_put - 25
+    inv_long_call = round((price + expected_move * 0.6) / 5) * 5
+    inv_short_call = inv_long_call + 25
+
     if regime == "TRENDING_BULL":
         strike = price + round(atr * 0.4)
         return (
             f"📈 <b>Daily SPX Signal – TRENDING BULL</b>\n"
             f"Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC\n"
             f"Price: <b>{price}</b>\n\n"
-            f"<b>Idea: Call</b>\n"
+            f"<b>Main Idea: Call</b>\n"
             f"Look ~{strike} Call (0DTE / weekly)\n"
             f"Expected move: ±{expected_move} pts"
         )
@@ -101,36 +109,41 @@ def generate_signal(regime, price, atr):
             f"📉 <b>Daily SPX Signal – TRENDING BEAR</b>\n"
             f"Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC\n"
             f"Price: <b>{price}</b>\n\n"
-            f"<b>Idea: Put</b>\n"
+            f"<b>Main Idea: Put</b>\n"
             f"Look ~{strike} Put (0DTE / weekly)\n"
             f"Expected move: ±{expected_move} pts"
         )
 
     else:
-        short_put = round((price - expected_move) / 5) * 5
-        long_put = short_put - 25
-        short_call = round((price + expected_move) / 5) * 5
-        long_call = short_call + 25
-        center = round(price / 5) * 5
-
+        # RANGING – show both normal + inverse strategies
         return (
             f"↔️ <b>Daily SPX Signal – RANGING</b>\n"
             f"Date: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC\n"
             f"Price: <b>{price}</b>\n"
             f"Expected range: ±{expected_move} pts\n\n"
-            f"<b>Iron Condor Idea:</b>\n"
+
+            f"<b>1. Iron Condor (Credit)</b>\n"
             f"Sell {short_put}P / Buy {long_put}P\n"
             f"Sell {short_call}C / Buy {long_call}C\n\n"
-            f"<b>Butterfly Idea:</b>\n"
-            f"Center {center} | Wings ±25"
+
+            f"<b>2. Butterfly (Debit)</b>\n"
+            f"Center {center} | Wings ±25\n\n"
+
+            f"<b>3. Inverse Iron Condor (Debit)</b>\n"
+            f"Buy {inv_long_put}P / Sell {inv_short_put}P\n"
+            f"Buy {inv_long_call}C / Sell {inv_short_call}C\n"
+            f"(Profits from big move in either direction)\n\n"
+
+            f"<b>4. Inverse Butterfly (Debit)</b>\n"
+            f"Sell Center {center} | Buy Wings ±25\n"
+            f"(Profits from strong expansion)"
         )
 
 
 def main():
     print("=== Starting Daily SPX Signal ===")
 
-    # First send a test message
-    send_telegram("🔔 <b>Bot Test</b>\nGitHub Action is working!")
+    send_telegram("🔔 <b>Bot Started</b>\nGenerating daily SPX ideas...")
 
     df = get_data()
     if df is None or df.empty:
@@ -141,7 +154,7 @@ def main():
     regime, atr = detect_regime(df)
     price = float(df["Close"].iloc[-1])
 
-    print(f"Regime: {regime} | Price: {price}")
+    print(f"Regime: {regime} | Price: {price} | ATR: {atr:.1f}")
 
     signal = generate_signal(regime, price, atr)
     print(signal)
