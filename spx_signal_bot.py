@@ -1,5 +1,4 @@
 import os
-import time
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -13,10 +12,6 @@ load_dotenv()
 # ====================== CONFIG ======================
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-SYMBOL = "^GSPC"
-CHECK_INTERVAL = 900      # 15 minutes
-RUN_ONLY_RTH = True
 # ====================================================
 
 
@@ -33,19 +28,9 @@ def send_telegram(msg: str):
             "text": msg,
             "parse_mode": "HTML"
         }, timeout=10)
-        print("Telegram sent")
+        print("Telegram sent successfully")
     except Exception as e:
         print("Telegram error:", e)
-
-
-def is_market_open():
-    et = pytz.timezone("US/Eastern")
-    now = datetime.now(et)
-    if now.weekday() >= 5:
-        return False
-    market_open = now.replace(hour=9, minute=30, second=0, microsecond=0)
-    market_close = now.replace(hour=16, minute=0, second=0, microsecond=0)
-    return market_open <= now <= market_close
 
 
 def get_data(symbol="^GSPC", period="5d", interval="15m"):
@@ -91,7 +76,8 @@ def generate_signal(regime, price, atr):
     if regime == "TRENDING_BULL":
         strike = price + round(atr * 0.4)
         return (
-            f"📈 <b>SPX Regime: TRENDING BULL</b>\n"
+            f"📈 <b>Daily SPX Signal – TRENDING BULL</b>\n"
+            f"Date: {datetime.now().strftime('%Y-%m-%d')}\n"
             f"Current: <b>{price}</b>\n\n"
             f"<b>Idea: Call (or Call Debit Spread)</b>\n"
             f"Look at ~{strike} Call (0DTE or weekly)\n"
@@ -101,7 +87,8 @@ def generate_signal(regime, price, atr):
     elif regime == "TRENDING_BEAR":
         strike = price - round(atr * 0.4)
         return (
-            f"📉 <b>SPX Regime: TRENDING BEAR</b>\n"
+            f"📉 <b>Daily SPX Signal – TRENDING BEAR</b>\n"
+            f"Date: {datetime.now().strftime('%Y-%m-%d')}\n"
             f"Current: <b>{price}</b>\n\n"
             f"<b>Idea: Put (or Put Debit Spread)</b>\n"
             f"Look at ~{strike} Put (0DTE or weekly)\n"
@@ -116,7 +103,8 @@ def generate_signal(regime, price, atr):
         center = round(price / 5) * 5
 
         return (
-            f"↔️ <b>SPX Regime: RANGING</b>\n"
+            f"↔️ <b>Daily SPX Signal – RANGING</b>\n"
+            f"Date: {datetime.now().strftime('%Y-%m-%d')}\n"
             f"Current: <b>{price}</b>\n"
             f"Expected range ≈ ±{expected_move} pts\n\n"
             f"<b>Primary Idea: Iron Condor</b>\n"
@@ -128,11 +116,12 @@ def generate_signal(regime, price, atr):
         )
 
 
-def run_once():
-    print(f"[{datetime.now()}] Checking market...")
+def main():
+    print(f"[{datetime.now()}] Running daily SPX signal...")
+
     df = get_data()
     if df is None or df.empty:
-        print("No data")
+        send_telegram("⚠️ Daily SPX Signal failed – no market data")
         return
 
     df = calculate_indicators(df)
@@ -142,28 +131,7 @@ def run_once():
     signal = generate_signal(regime, price, atr)
     print(signal)
     send_telegram(signal)
-
-
-def main():
-    print("SPX Signal Bot started (ideas only)")
-    send_telegram("🟢 <b>SPX Signal Bot started</b>\nIdeas only – no trading")
-
-    while True:
-        try:
-            if RUN_ONLY_RTH and not is_market_open():
-                print("Market closed – sleeping...")
-                time.sleep(300)
-                continue
-
-            run_once()
-            time.sleep(CHECK_INTERVAL)
-
-        except KeyboardInterrupt:
-            send_telegram("🔴 SPX Signal Bot stopped")
-            break
-        except Exception as e:
-            print("Error:", e)
-            time.sleep(60)
+    print("Daily signal sent. Exiting.")
 
 
 if __name__ == "__main__":
